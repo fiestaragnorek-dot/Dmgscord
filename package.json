@@ -1,0 +1,11 @@
+{
+  "name": "dmgscord",
+  "version": "1.0.0",
+  "description": "Dmgscord - Discord iOS translator plugin for Kettu",
+  "main": "dist/Dmgscord.js",
+  "scripts": {
+    "build": "echo 'Built manually'"
+  },
+  "author": "fiestaragnorek-dot",
+  "license": "MIT"
+}
