@@ -1,226 +1,152 @@
-// Dmgscord v1.0.0 - Discord Translator for Kettu
+// Dmgscord v1.4 - Minimal Working Version
 // https://github.com/fiestaragnorek-dot/Dmgscord
 
-let patches = [];
-const storage = (globalThis.vendetta?.storage || {});
+const storage = vendetta.storage || {};
 
 if (!storage.useAI) storage.useAI = false;
 if (!storage.apiKey) storage.apiKey = "";
-if (!storage.baseURL) storage.baseURL = "https://api.openai.com/v1";
-if (!storage.model) storage.model = "gpt-4o-mini";
+if (!storage.baseURL) storage.baseURL = "https://api.groq.com/openai/v1";
+if (!storage.model) storage.model = "llama-3.3-70b-versatile";
 if (!storage.targetLangInput) storage.targetLangInput = "en";
 if (!storage.offlineOnly) storage.offlineOnly = false;
 
-// === American Slang Map ===
-const americanSlangMap = {
-    "это круто": "that's lit / fire",
-    "круто": "lit / fire",
-    "отлично": "lit / no cap",
-    "классно": "lit / bussin'",
-    "ты шутишь": "you cappin' / no cap",
-    "шутка": "cap",
-    "не шути": "no cap",
-    "реально": "no cap",
-    "правда": "no cap",
-    "неправда": "that's cap",
-    "ложь": "cap",
+const slang = {
+    "это круто": "that's lit",
+    "круто": "lit",
+    "отлично": "no cap",
+    "ты шутишь": "you cappin'",
     "подозрительно": "sus",
-    "подозрительный": "sus",
-    "странно": "sus",
-    "безумие": "that's wild",
-    "безумно": "wild",
-    "класс": "bussin'",
-    "вкусно": "bussin'",
-    "хорошо": "bussin' / lit",
-    "плохо": "mid / trash",
-    "норм": "mid",
-    "средне": "mid",
-    "отстой": "trash",
-    "ужас": "trash",
-    "крутой": "goated / fire",
+    "правда": "no cap",
+    "брат": "bro",
+    "ладно": "bet",
+    "факт": "facts",
     "лучший": "goated",
-    "топ": "goated",
-    "дерьмо": "mid / trash",
-    "я в шоке": "that's crazy",
-    "вау": "no cap / lit",
-    "да ладно": "no cap / fr",
-    "факт": "facts / fr",
-    "правда брат": "fr fr",
-    "брат": "bro / bruh",
-    "друг": "bro",
-    "ребята": "y'all",
-    "вы все": "y'all",
-    "все вы": "y'all",
-    "понял": "got it / bet",
-    "ок": "bet / aight",
-    "ладно": "aight / bet",
-    "не знаю": "idk",
-    "пошли": "let's go",
-    "давай": "let's go / bet",
-    "согласен": "facts",
 };
 
-function applyAmericanSlang(text) {
-    let result = text.toLowerCase();
-    for (const [ru, en] of Object.entries(americanSlangMap)) {
-        const regex = new RegExp(ru, "gi");
-        result = result.replace(regex, en);
+function applySlang(t) {
+    let r = t.toLowerCase();
+    for (const [ru, en] of Object.entries(slang)) {
+        r = r.replace(new RegExp(ru, "gi"), en);
     }
-    if (result.includes("lit")) result = result.replace(/lit/gi, "lit 🔥");
-    if (result.includes("no cap")) result = result.replace(/no cap/gi, "no cap 💯");
-    return result;
+    return r;
 }
 
-const offlineDict = {
-    "hello": "привет", "hi": "привет", "good": "хорошо", "bad": "плохо",
-    "yes": "да", "no": "нет", "thanks": "спасибо", "cool": "круто",
-    "awesome": "классно", "lit": "круто", "sus": "подозрительно",
-    "cap": "ложь", "no cap": "правда", "y'all": "вы все",
-    "bro": "брат", "bet": "ладно", "facts": "факт", "mid": "средне",
-    "trash": "отстой", "goated": "лучший", "bussin": "вкусно",
-};
-
-function detectLanguage(text) {
-    return /[а-яё]/i.test(text) ? "ru" : /[a-z]/i.test(text) ? "en" : "unknown";
+function detect(t) {
+    return /[а-яё]/i.test(t) ? "ru" : "en";
 }
 
-function offlineTranslate(text, target) {
-    const lang = detectLanguage(text);
-    if (target === "ru") {
-        let res = text;
-        for (const [en, ru] of Object.entries(offlineDict)) {
-            res = res.replace(new RegExp(`\\b${en}\\b`, "gi"), ru);
-        }
+function offline(t, toRu) {
+    const d = { "hello": "привет", "hi": "привет", "good": "хорошо", "yes": "да", "no": "нет", "cool": "круто", "lit": "круто", "sus": "подозрительно", "bro": "брат", "bet": "ладно" };
+    if (toRu) {
+        let res = t;
+        Object.entries(d).forEach(([e, r]) => res = res.replace(new RegExp(e, "gi"), r));
         return res;
-    } else {
-        let res = text;
-        for (const [ru, en] of Object.entries(americanSlangMap)) {
-            res = res.replace(new RegExp(ru, "gi"), en);
-        }
-        for (const [ru, en] of Object.entries(offlineDict)) {
-            res = res.replace(new RegExp(`\\b${ru}\\b`, "gi"), en);
-        }
-        return applyAmericanSlang(res);
     }
+    let res = t;
+    Object.entries(slang).forEach(([ru, en]) => res = res.replace(new RegExp(ru, "gi"), en));
+    return applySlang(res);
 }
 
-async function aiTranslate(text, targetLang, isInput = false) {
-    if (!storage.apiKey || storage.offlineOnly) {
-        return offlineTranslate(text, targetLang === "ru" ? "ru" : "en");
-    }
-
-    const system = isInput 
-        ? "Translate Russian to natural American English with heavy slang (lit, no cap, sus, bussin', y'all, goated, mid, fr fr, bet, aight)."
-        : "Translate accurately to Russian.";
-
+async function aiTranslate(text, target, isInput) {
+    if (!storage.apiKey || storage.offlineOnly) return offline(text, target === "ru");
+    
     try {
         const res = await fetch(`${storage.baseURL}/chat/completions`, {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${storage.apiKey}`
-            },
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${storage.apiKey}` },
             body: JSON.stringify({
                 model: storage.model,
                 messages: [
-                    { role: "system", content: system },
-                    { role: "user", content: `Translate to ${targetLang === "ru" ? "Russian" : "English"}: ${text}` }
+                    { role: "system", content: isInput ? "Translate to casual American English with slang (lit, no cap, sus, y'all, bet)." : "Translate to Russian." },
+                    { role: "user", content: `Translate to ${target}: ${text}` }
                 ],
-                temperature: 0.3,
-                max_tokens: 400
+                temperature: 0.2,
+                max_tokens: 250
             })
         });
         const data = await res.json();
-        let translated = data.choices?.[0]?.message?.content?.trim() || text;
-        if (targetLang !== "ru" && isInput) translated = applyAmericanSlang(translated);
-        return translated;
-    } catch (e) {
-        return offlineTranslate(text, targetLang === "ru" ? "ru" : "en");
+        return data.choices?.[0]?.message?.content?.trim() || text;
+    } catch {
+        return offline(text, target === "ru");
     }
 }
 
-async function translateMessage(content) {
+async function translateMsg(content) {
     if (!content) return content;
-    if (detectLanguage(content) === "ru") return content;
-    return (storage.useAI && storage.apiKey && !storage.offlineOnly)
-        ? await aiTranslate(content, "ru", false)
-        : offlineTranslate(content, "ru");
+    if (detect(content) === "ru") return content;
+    return storage.useAI && storage.apiKey ? await aiTranslate(content, "ru", false) : offline(content, true);
 }
 
 async function translateInput(content) {
     if (!content) return content;
-    if (detectLanguage(content) === "en") return applyAmericanSlang(content);
-    return (storage.useAI && storage.apiKey && !storage.offlineOnly)
-        ? await aiTranslate(content, storage.targetLangInput, true)
-        : offlineTranslate(content, "en");
+    if (detect(content) === "en") return applySlang(content);
+    return storage.useAI && storage.apiKey ? await aiTranslate(content, storage.targetLangInput, true) : offline(content, false);
 }
 
-// Patch message action sheet
-function patchMessageActions() {
-    const MessageActionSheet = globalThis.vendetta?.metro?.findByProps?.("MessageActionSheet");
-    if (!MessageActionSheet) return;
+// ==================== PLUGIN ====================
+export default {
+    onLoad() {
+        console.log("[Dmgscord] v1.4 loaded");
 
-    const unpatch = globalThis.vendetta?.patcher?.after("default", MessageActionSheet, (args, res) => {
-        const msg = args[0]?.message;
-        if (!msg?.content) return res;
+        // Message header button (next to username)
+        const MessageHeader = vendetta.metro.findByProps("MessageHeader");
+        if (MessageHeader) {
+            vendetta.patcher.after("default", MessageHeader, (args, res) => {
+                const msg = args[0]?.message;
+                if (!msg?.content) return res;
 
-        const btn = {
-            label: "🌐 Перевести на русский",
-            onPress: async () => {
-                const t = await translateMessage(msg.content);
-                globalThis.vendetta?.ui?.showToast?.("Перевод скопирован!", "success");
-                if (navigator.clipboard) navigator.clipboard.writeText(t);
-            }
-        };
+                const btn = React.createElement("TouchableOpacity", {
+                    onPress: async () => {
+                        const translated = await translateMsg(msg.content);
+                        vendetta.ui.showToast("Переведено на русский!", "success");
+                        navigator.clipboard?.writeText(translated);
+                    },
+                    style: { marginLeft: 8, padding: 4, backgroundColor: "#5865F2", borderRadius: 6 }
+                }, React.createElement("Text", { style: { color: "#fff", fontSize: 11, fontWeight: "700" } }, "🌐 RU"));
 
-        console.log("[Dmgscord] Message translate button ready");
-        return res;
-    });
-    patches.push(unpatch);
-}
+                if (res?.props?.children) {
+                    const ch = Array.isArray(res.props.children) ? res.props.children : [res.props.children];
+                    ch.push(btn);
+                    res.props.children = ch;
+                }
+                return res;
+            });
+        }
 
-// Patch chat input
-function patchChatInput() {
-    const ChatInput = globalThis.vendetta?.metro?.findByProps?.("ChatInput");
-    if (!ChatInput) return;
+        // Input button
+        const ChatInput = vendetta.metro.findByProps("ChatInput");
+        if (ChatInput) {
+            vendetta.patcher.after("default", ChatInput, (_, res) => {
+                const props = res?.props;
+                if (!props) return res;
 
-    const unpatch = globalThis.vendetta?.patcher?.after("default", ChatInput, (args, res) => {
-        const props = res?.props;
-        if (!props) return res;
+                const btn = React.createElement("TouchableOpacity", {
+                    onPress: async () => {
+                        const input = props.inputRef?.current;
+                        if (!input?.value) return vendetta.ui.showToast("Напиши текст", "info");
+                        const t = await translateInput(input.value);
+                        if (input.setNativeProps) input.setNativeProps({ text: t });
+                        vendetta.ui.showToast("Переведено!", "success");
+                    },
+                    style: { backgroundColor: "#5865F2", borderRadius: 16, paddingHorizontal: 10, paddingVertical: 4, marginRight: 8, alignSelf: "center" }
+                }, React.createElement("Text", { style: { color: "#fff", fontWeight: "700", fontSize: 12 } }, "🌐 EN"));
 
-        const btn = React.createElement("TouchableOpacity", {
-            onPress: async () => {
-                const input = props.inputRef?.current;
-                if (!input?.value) return;
-                const translated = await translateInput(input.value);
-                if (input.setNativeProps) input.setNativeProps({ text: translated });
-                globalThis.vendetta?.ui?.showToast?.("Переведено на английский + сленг!", "success");
-            },
-            style: {
-                backgroundColor: "#5865F2",
-                borderRadius: 18,
-                paddingHorizontal: 12,
-                paddingVertical: 5,
-                marginRight: 6,
-                alignSelf: "center"
-            }
-        }, React.createElement("Text", {
-            style: { color: "#fff", fontSize: 13, fontWeight: "700" }
-        }, "🌐 EN"));
+                props.children = Array.isArray(props.children) ? [...props.children, btn] : [props.children, btn];
+                return res;
+            });
+        }
 
-        props.children = Array.isArray(props.children) 
-            ? [...props.children, btn] 
-            : [props.children, btn];
-        return res;
-    });
-    patches.push(unpatch);
-}
+        vendetta.ui.showToast("Dmgscord v1.4 загружен", "success");
+    },
 
-// Settings screen
+    onUnload() {},
+
+    settings: Settings
+};
+
 function Settings() {
-    const React = globalThis.React || require("react");
-    const RN = globalThis.ReactNative || require("react-native");
-    const { ScrollView, Text, View, Switch, TextInput, TouchableOpacity } = RN;
+    const React = vendetta.React;
+    const { ScrollView, Text, View, Switch, TextInput, TouchableOpacity } = vendetta.ReactNative;
 
     const [useAI, setUseAI] = React.useState(storage.useAI);
     const [apiKey, setApiKey] = React.useState(storage.apiKey);
@@ -236,87 +162,35 @@ function Settings() {
         storage.model = model;
         storage.targetLangInput = targetLang;
         storage.offlineOnly = offlineOnly;
-        globalThis.vendetta?.ui?.showToast?.("Настройки сохранены!", "success");
+        vendetta.ui.showToast("Сохранено", "success");
     };
 
     return React.createElement(ScrollView, { style: { flex: 1, padding: 16, backgroundColor: "#36393e" } },
-        React.createElement(View, {},
-            React.createElement(Text, { style: { color: "#fff", fontSize: 24, fontWeight: "bold", marginBottom: 20 } }, "Dmgscord"),
-            
-            React.createElement(View, { style: { flexDirection: "row", alignItems: "center", marginBottom: 16 } },
-                React.createElement(Text, { style: { color: "#ddd", flex: 1, fontSize: 16 } }, "Использовать AI"),
+        React.createElement(View, null,
+            React.createElement(Text, { style: { color: "#fff", fontSize: 20, fontWeight: "bold", marginBottom: 16 } }, "Dmgscord"),
+            React.createElement(View, { style: { flexDirection: "row", alignItems: "center", marginBottom: 12 } },
+                React.createElement(Text, { style: { color: "#ddd", flex: 1 } }, "Использовать AI"),
                 React.createElement(Switch, { value: useAI, onValueChange: setUseAI })
             ),
-            
-            React.createElement(TextInput, {
-                placeholder: "API Key",
-                value: apiKey,
-                onChangeText: setApiKey,
-                secureTextEntry: true,
-                style: { backgroundColor: "#2f3136", color: "#fff", padding: 14, borderRadius: 10, marginBottom: 12 }
-            }),
-            
-            React.createElement(TextInput, {
-                placeholder: "Base URL",
-                value: baseURL,
-                onChangeText: setBaseURL,
-                style: { backgroundColor: "#2f3136", color: "#fff", padding: 14, borderRadius: 10, marginBottom: 12 }
-            }),
-            
-            React.createElement(TextInput, {
-                placeholder: "Model",
-                value: model,
-                onChangeText: setModel,
-                style: { backgroundColor: "#2f3136", color: "#fff", padding: 14, borderRadius: 10, marginBottom: 12 }
-            }),
-            
-            React.createElement(TextInput, {
-                placeholder: "Целевой язык (en)",
-                value: targetLang,
-                onChangeText: setTargetLang,
-                style: { backgroundColor: "#2f3136", color: "#fff", padding: 14, borderRadius: 10, marginBottom: 20 }
-            }),
-            
-            React.createElement(View, { style: { flexDirection: "row", alignItems: "center", marginBottom: 20 } },
-                React.createElement(Text, { style: { color: "#ddd", flex: 1, fontSize: 16 } }, "Только оффлайн"),
+            React.createElement(TextInput, { placeholder: "API Key", value: apiKey, onChangeText: setApiKey, secureTextEntry: true, style: { backgroundColor: "#2f3136", color: "#fff", padding: 10, borderRadius: 8, marginBottom: 8 } }),
+            React.createElement(TextInput, { placeholder: "Base URL", value: baseURL, onChangeText: setBaseURL, style: { backgroundColor: "#2f3136", color: "#fff", padding: 10, borderRadius: 8, marginBottom: 8 } }),
+            React.createElement(TextInput, { placeholder: "Model", value: model, onChangeText: setModel, style: { backgroundColor: "#2f3136", color: "#fff", padding: 10, borderRadius: 8, marginBottom: 8 } }),
+            React.createElement(TextInput, { placeholder: "Целевой язык (en)", value: targetLang, onChangeText: setTargetLang, style: { backgroundColor: "#2f3136", color: "#fff", padding: 10, borderRadius: 8, marginBottom: 12 } }),
+            React.createElement(View, { style: { flexDirection: "row", alignItems: "center", marginBottom: 16 } },
+                React.createElement(Text, { style: { color: "#ddd", flex: 1 } }, "Только оффлайн"),
                 React.createElement(Switch, { value: offlineOnly, onValueChange: setOfflineOnly })
             ),
-            
-            React.createElement(TouchableOpacity, {
-                onPress: save,
-                style: { backgroundColor: "#5865F2", padding: 16, borderRadius: 12, alignItems: "center", marginBottom: 12 }
-            }, React.createElement(Text, { style: { color: "#fff", fontWeight: "700", fontSize: 16 } }, "Сохранить настройки")),
-            
+            React.createElement(TouchableOpacity, { onPress: save, style: { backgroundColor: "#5865F2", padding: 12, borderRadius: 8, alignItems: "center" } },
+                React.createElement(Text, { style: { color: "#fff", fontWeight: "600" } }, "Сохранить")
+            ),
             React.createElement(TouchableOpacity, {
                 onPress: async () => {
-                    const test = "Привет, это очень круто, брат!";
+                    const test = "Привет, это очень круто!";
                     const result = await aiTranslate(test, "en", true);
-                    globalThis.alert?.("Тест перевода:\n" + result);
+                    alert(result);
                 },
-                style: { backgroundColor: "#2f3136", padding: 16, borderRadius: 12, alignItems: "center" }
-            }, React.createElement(Text, { style: { color: "#fff" } }, "Тест AI + сленг")),
+                style: { marginTop: 10, backgroundColor: "#2f3136", padding: 12, borderRadius: 8, alignItems: "center" }
+            }, React.createElement(Text, { style: { color: "#fff" } }, "Тест перевода"))
         )
     );
 }
-
-// Plugin export
-export default {
-    onLoad() {
-        console.log("[Dmgscord] Loaded successfully");
-        patchMessageActions();
-        patchChatInput();
-        
-        if (globalThis.vendetta) {
-            globalThis.vendetta.plugin = { settings: Settings };
-        }
-        
-        globalThis.vendetta?.ui?.showToast?.("Dmgscord загружен!", "success");
-    },
-    
-    onUnload() {
-        patches.forEach(p => p && p());
-        patches = [];
-    },
-    
-    settings: Settings
-};
