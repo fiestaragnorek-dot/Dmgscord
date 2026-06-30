@@ -1,0 +1,15 @@
+{
+  "name": "Dmgscord",
+  "description": "RU/EN translator for Kettu with OpenAI-compatible API settings.",
+  "authors": [
+    {
+      "name": "Arena.ai",
+      "id": "0"
+    }
+  ],
+  "main": "index.js",
+  "hash": "077f1a29d9eadf3caaa859b37671f50adfd6f176b7d263d443a44e83f4676a87",
+  "vendetta": {
+    "icon": "ic_message_edit"
+  }
+}
