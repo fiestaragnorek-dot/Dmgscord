@@ -1,0 +1,17 @@
+name: Build Dmgscord
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Upload plugin
+        uses: actions/upload-artifact@v4
+        with:
+          name: Dmgscord
+          path: dist/Dmgscord.js
