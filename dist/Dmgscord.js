@@ -1,83 +1,71 @@
-// Dmgscord v1.5 - Ultra Minimal (Manifest Fix)
+// Dmgscord v1.6 - Kettu Compatible
+const manifest = {
+    name: "Dmgscord",
+    description: "Translator with AI + Slang",
+    authors: [{ name: "Dmgscord" }],
+    version: "1.6"
+};
+
 export default {
+    manifest,
     onLoad() {
         const storage = vendetta.storage || {};
-        if (!storage.baseURL) storage.baseURL = "https://api.groq.com/openai/v1";
+        storage.baseURL = storage.baseURL || "https://api.groq.com/openai/v1";
 
-        // Message button
-        const MessageHeader = vendetta.metro.findByProps("MessageHeader");
-        if (MessageHeader) {
-            vendetta.patcher.after("default", MessageHeader, (args, res) => {
-                const msg = args[0]?.message;
-                if (!msg?.content) return res;
+        // Button next to username
+        const MH = vendetta.metro.findByProps("MessageHeader");
+        if (MH) vendetta.patcher.after("default", MH, (args, res) => {
+            const msg = args[0]?.message;
+            if (!msg?.content) return res;
+            const btn = React.createElement("TouchableOpacity", {
+                onPress: async () => {
+                    let t = msg.content;
+                    if (!/[а-яё]/i.test(t) && storage.apiKey) {
+                        try {
+                            const r = await fetch(storage.baseURL + "/chat/completions", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json", "Authorization": `Bearer ${storage.apiKey}` },
+                                body: JSON.stringify({ model: storage.model || "llama-3.3-70b-versatile", messages: [{ role: "user", content: "Translate to Russian: " + t }], max_tokens: 150 })
+                            });
+                            const d = await r.json();
+                            t = d.choices?.[0]?.message?.content || t;
+                        } catch(e) {}
+                    }
+                    navigator.clipboard.writeText(t);
+                    vendetta.ui.showToast("Скопировано", "success");
+                },
+                style: { marginLeft: 6, padding: 3, backgroundColor: "#5865F2", borderRadius: 4 }
+            }, React.createElement("Text", { style: { color: "#fff", fontSize: 10, fontWeight: "700" } }, "RU"));
+            if (res.props.children) {
+                const arr = Array.isArray(res.props.children) ? res.props.children : [res.props.children];
+                arr.push(btn);
+                res.props.children = arr;
+            }
+            return res;
+        });
 
-                const btn = React.createElement("TouchableOpacity", {
-                    onPress: async () => {
-                        let text = msg.content;
-                        if (/[а-яё]/i.test(text)) {
-                            vendetta.ui.showToast("Уже на русском", "info");
-                            return;
-                        }
-                        vendetta.ui.showToast("Перевод...", "info");
-                        
-                        if (storage.apiKey) {
-                            try {
-                                const r = await fetch(storage.baseURL + "/chat/completions", {
-                                    method: "POST",
-                                    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + storage.apiKey },
-                                    body: JSON.stringify({
-                                        model: storage.model || "llama-3.3-70b-versatile",
-                                        messages: [{ role: "user", content: "Translate to Russian: " + text }],
-                                        max_tokens: 200
-                                    })
-                                });
-                                const d = await r.json();
-                                text = d.choices?.[0]?.message?.content || text;
-                            } catch(e) {}
-                        }
-                        navigator.clipboard.writeText(text);
-                        vendetta.ui.showToast("Скопировано!", "success");
-                    },
-                    style: { marginLeft: 6, paddingHorizontal: 6, paddingVertical: 2, backgroundColor: "#5865F2", borderRadius: 5 }
-                }, React.createElement("Text", { style: { color: "#fff", fontSize: 10, fontWeight: "700" } }, "RU"));
+        // Button near send
+        const CI = vendetta.metro.findByProps("ChatInput");
+        if (CI) vendetta.patcher.after("default", CI, (_, res) => {
+            const p = res.props;
+            if (!p) return res;
+            const btn = React.createElement("TouchableOpacity", {
+                onPress: () => {
+                    const inp = p.inputRef?.current;
+                    if (!inp?.value) return;
+                    let txt = inp.value;
+                    if (!/[а-яё]/i.test(txt)) txt = txt.replace(/это круто/gi, "lit").replace(/круто/gi, "lit").replace(/отлично/gi, "no cap");
+                    if (inp.setNativeProps) inp.setNativeProps({ text: txt });
+                    vendetta.ui.showToast("Переведено", "success");
+                },
+                style: { backgroundColor: "#5865F2", borderRadius: 12, paddingHorizontal: 7, paddingVertical: 2, marginRight: 5 }
+            }, React.createElement("Text", { style: { color: "#fff", fontSize: 10, fontWeight: "700" } }, "EN"));
+            p.children = Array.isArray(p.children) ? [...p.children, btn] : [p.children, btn];
+            return res;
+        });
 
-                if (res.props.children) {
-                    const arr = Array.isArray(res.props.children) ? res.props.children : [res.props.children];
-                    arr.push(btn);
-                    res.props.children = arr;
-                }
-                return res;
-            });
-        }
-
-        // Input button
-        const ChatInput = vendetta.metro.findByProps("ChatInput");
-        if (ChatInput) {
-            vendetta.patcher.after("default", ChatInput, (_, res) => {
-                const p = res.props;
-                if (!p) return res;
-
-                const btn = React.createElement("TouchableOpacity", {
-                    onPress: async () => {
-                        const inp = p.inputRef?.current;
-                        if (!inp?.value) return;
-                        let txt = inp.value;
-                        if (!/[а-яё]/i.test(txt)) {
-                            txt = txt.toLowerCase().replace(/это круто/g, "that's lit").replace(/круто/g, "lit").replace(/отлично/g, "no cap");
-                        }
-                        if (inp.setNativeProps) inp.setNativeProps({ text: txt });
-                        vendetta.ui.showToast("Готово", "success");
-                    },
-                    style: { backgroundColor: "#5865F2", borderRadius: 14, paddingHorizontal: 8, paddingVertical: 3, marginRight: 6 }
-                }, React.createElement("Text", { style: { color: "#fff", fontSize: 11, fontWeight: "700" } }, "EN"));
-
-                p.children = Array.isArray(p.children) ? [...p.children, btn] : [p.children, btn];
-                return res;
-            });
-        }
-
-        vendetta.ui.showToast("Dmgscord загружен", "success");
+        vendetta.ui.showToast("Dmgscord v1.6", "success");
     },
     onUnload() {},
-    settings: () => React.createElement("View", null, React.createElement("Text", { style: { color: "#fff" } }, "Dmgscord Settings (простая версия)"))
+    settings: () => React.createElement("View", { style: { padding: 16 } }, React.createElement("Text", { style: { color: "#fff" } }, "Dmgscord — настрой API в storage"))
 };
