@@ -1,6 +1,6 @@
 {
   "name": "Dmgscord",
-  "description": "RU/EN translator for Kettu with OpenAI-compatible API settings.",
+  "description": "Free translator for Kettu with long-press message translation.",
   "authors": [
     {
       "name": "Arena.ai",
@@ -8,7 +8,7 @@
     }
   ],
   "main": "index.js",
-  "hash": "9816b066bfd30a3c1ea4bc6d537516e63e6836cffc0f3524d98589e631497b6d",
+  "hash": "2aebfada1f414044346e74280bd37030f08682aa26c656095689d41443996d40",
   "vendetta": {
     "icon": "ic_message_edit"
   }
