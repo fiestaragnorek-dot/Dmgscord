@@ -18,6 +18,7 @@
   var General=comps.General||{};
   var showToast=ui.toasts&&ui.toasts.showToast||function(){};
   var showConfirmationAlert=ui.alerts&&ui.alerts.showConfirmationAlert||function(){};
+  var getAssetIDByName=ui.assets&&ui.assets.getAssetIDByName||function(){};
   var useProxy=vendetta.storage&&vendetta.storage.useProxy||function(){};
   var s=vendetta.plugin&&vendetta.plugin.storage?vendetta.plugin.storage:{};
   var unpatches=[];
@@ -169,6 +170,42 @@
     },style:{paddingHorizontal:8,paddingVertical:6,borderRadius:12,backgroundColor:"#5865F2",marginHorizontal:4,alignSelf:"center"}},React.createElement(RN.Text,{style:{color:"white",fontSize:12,fontWeight:"600"}},"🌐 EN"));
   }
 
+  function EnFloat(props){
+    var inputProps=props.inputProps||{};
+    var st=React.useState("");
+    var text=st[0],setText=st[1];
+    React.useEffect(function(){
+      var des=[];
+      try{ if(before&&inputProps&&typeof inputProps.handleTextChanged==="function") des.push(before("handleTextChanged",inputProps,function(a){ setText(a&&a[0]||""); })); }catch(e){ warn(e); }
+      try{ if(after&&inputProps&&typeof inputProps.onChangeText==="function") des.push(after("onChangeText",inputProps,function(a){ setText(a&&a[0]||""); },true)); }catch(e){ warn(e); }
+      return function(){ while(des.length) try{ des.pop()(); }catch(e){} };
+    },[inputProps]);
+    if(!text) return null;
+    return React.createElement(RN.View,{pointerEvents:"box-none",style:{position:"absolute",right:56,bottom:10,zIndex:9999}},React.createElement(RN.Pressable,{onPress:function(){
+      showToast("Translating...");
+      translate(text,"en").then(function(out){ setInputText(inputProps,out); showToast("Done"); }).catch(function(){ showToast("Translate failed"); });
+    },style:{paddingHorizontal:10,paddingVertical:7,borderRadius:14,backgroundColor:"#5865F2"}},React.createElement(RN.Text,{style:{color:"#fff",fontSize:12,fontWeight:"700"}},"🌐 EN")));
+  }
+
+  function makeTranslateRow(baseType, baseProps, message, text){
+    var p={};
+    var k;
+    baseProps=baseProps||{};
+    for(k in baseProps) p[k]=baseProps[k];
+    p.key="dmgscord-translate-ru";
+    p.message="Translate to Russian";
+    p.icon=getAssetIDByName("ic_message_edit") || baseProps.icon;
+    p.destructive=false;
+    p.onPress=function(){
+      try{ var laz=findByProps&&findByProps("openLazy","hideActionSheet"); laz&&laz.hideActionSheet&&laz.hideActionSheet(); }catch(e){}
+      showToast("Translating...");
+      translate(text,"ru").then(function(out){
+        showConfirmationAlert({title:"🇷🇺 RU",content:out,confirmText:"OK",onConfirm:function(){}});
+      }).catch(function(){ showToast("Translate failed"); });
+    };
+    return React.createElement(baseType, p);
+  }
+
   function Settings(){
     useProxy(s);
     var Scroll=General.ScrollView||RN.ScrollView||RN.View;
@@ -232,11 +269,55 @@
           var a=args&&args[0];
           if(!a) return;
           if(a.accessibilityLabel===sendLabel&&typeof a.onPress==="function"){
-            a.onLongPress=function(){ showToast("Dmgscord: if EN button is hidden, type text and long-press Send later when debug build gets full hook"); };
+            a.onLongPress=function(){ showToast("Hold send fallback is active"); };
           }
         }catch(e){}
       }));
     }catch(e){ warn("Dmgscord send fallback fail",e); }
+  }
+
+  function patchChatViewOverlay(){
+    try{
+      var ChatView=findByTypeName&&findByTypeName("ChatView");
+      if(after&&ChatView){
+        unpatches.push(after("type",ChatView,function(args,ret){
+          try{
+            var p=args&&args[0]||{};
+            var inputRef=p.chatInputRef&&(p.chatInputRef.current||p.chatInputRef);
+            if(!inputRef) return ret;
+            return React.createElement(React.Fragment,{},ret,React.createElement(EnFloat,{inputProps:inputRef}));
+          }catch(e){ warn("Dmgscord ChatView overlay",e); return ret; }
+        }));
+      }
+    }catch(e){ warn("Dmgscord ChatView overlay fail",e); }
+  }
+
+  function patchMessageActionSheet(){
+    try{
+      var LazyActionSheet=findByProps&&findByProps("openLazy","hideActionSheet");
+      if(!LazyActionSheet||!before) return;
+      unpatches.push(before("openLazy",LazyActionSheet,function(args){
+        try{
+          var component=args&&args[0], key=args&&args[1], msg=args&&args[2];
+          var message=msg&&msg.message;
+          var text=getText(message).trim();
+          if(key!=="MessageLongPressActionSheet"||!message||!text||!component||typeof component.then!=="function") return;
+          component.then(function(mod){
+            var unp=after("default",mod,function(_,comp){
+              try{ React.useEffect(function(){ return function(){ try{ unp(); }catch(e){} }; },[]); }catch(e){}
+              var buttons=findInReactTree&&findInReactTree(comp,function(x){ return x&&x[0]&&x[0].type&&x[0].type.name==="ButtonRow"; });
+              if(!buttons||!buttons.length) return comp;
+              for(var i=0;i<buttons.length;i++) if(buttons[i]&&buttons[i].key==="dmgscord-translate-ru") return comp;
+              var at=0;
+              var markUnread=(i18n.Messages&&i18n.Messages.MARK_UNREAD)||"Mark Unread";
+              for(i=0;i<buttons.length;i++) if(buttons[i]&&buttons[i].props&&buttons[i].props.message===markUnread){ at=i; break; }
+              buttons.splice(at,0,makeTranslateRow(buttons[0].type, buttons[0].props, message, text));
+              return comp;
+            });
+          });
+        }catch(e){ warn("Dmgscord action sheet patch",e); }
+      }));
+    }catch(e){ warn("Dmgscord action sheet load fail",e); }
   }
 
   function patchHeaders(){
@@ -270,7 +351,9 @@
     onLoad:function(){
       patchInputViaGuard();
       patchInputLegacy();
+      patchChatViewOverlay();
       patchSendLongPress();
+      patchMessageActionSheet();
       patchHeaders();
       showToast("Dmgscord loaded");
     },
